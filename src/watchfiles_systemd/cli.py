@@ -120,11 +120,23 @@ def ps():
             path = u["Path"]
             try:
                 st = await get_unit_status(bus, path)
-                state = st["ActiveState"]
-                pid = int(st["MainPID"]) if st.get("MainPID") is not None else 0
-                # If systemd says activating but we have a PID, treat as active
-                if state == "activating" and pid > 0:
-                    state = "active"
+                act = st.get("ActiveState", "unknown")
+                sub = st.get("SubState", "unknown")
+                pid = int(st.get("MainPID") or 0)
+                # Derive a clearer, human-friendly state
+                if act == "failed":
+                    state = "failed"
+                elif act == "activating":
+                    if sub == "auto-restart":
+                        state = "flapping"
+                    elif pid > 0:
+                        state = f"activating({sub})"
+                    else:
+                        state = "activating"
+                elif act == "active":
+                    state = f"active({sub})" if sub and sub != "running" else "active"
+                else:
+                    state = act
             except Exception:
                 state = u.get("ActiveState", "unknown")
                 pid = 0
@@ -149,9 +161,15 @@ def status(name: str):
         state = st.get("ActiveState", "unknown")
         sub = st.get("SubState", "unknown")
         pid_val = int(st.get("MainPID") or 0)
+        restarts = st.get("NRestarts")
+        result = st.get("Result")
         typer.echo(f"name: {unit}")
         typer.echo(f"state: {state} ({sub})")
         typer.echo(f"pid: {pid_val}")
+        if isinstance(restarts, int):
+            typer.echo(f"restarts: {restarts}")
+        if isinstance(result, str) and result:
+            typer.echo(f"result: {result}")
         typer.echo(f"log: ww logs {unit} -f")
 
     asyncio.run(_status())
@@ -173,8 +191,19 @@ def pid(name: str):
 
 
 @app.command()
-def logs(name: str, n: int = typer.Option(100, "-n"), follow: bool = typer.Option(False, "-f")):
-    """Show journald logs for a unit (history or follow)."""
+def logs(
+    name: str,
+    n: int = typer.Option(100, "-n"),
+    follow: bool = typer.Option(False, "-f"),
+    all: bool = typer.Option(
+        False, "-a", "--all", help="Show full history (not just since last start)"
+    ),
+):
+    """Show journald logs for a unit.
+
+    By default, shows only logs since the unit last became active to avoid
+    confusion with older failures. Use --all to see full history.
+    """
     unit = name if name.endswith(".service") else f"{name}.service"
     cmd = [
         "journalctl",
@@ -184,6 +213,26 @@ def logs(name: str, n: int = typer.Option(100, "-n"), follow: bool = typer.Optio
         "-n",
         str(n),
     ]
+    # If not following and not requesting full history, limit to last active start
+    if not follow and not all:
+        async def _since_ts():
+            try:
+                bus = await connect_user_bus()
+                path = await get_unit_path(bus, unit)
+                if path:
+                    st = await get_unit_status(bus, path)
+                    ts = int(st.get("ActiveEnterTimestamp") or 0)
+                    if ts > 0:
+                        # Convert microseconds -> seconds for journalctl @<unix>
+                        secs = ts // 1_000_000
+                        return secs
+            except Exception:
+                return None
+            return None
+
+        secs = asyncio.run(_since_ts())
+        if secs:
+            cmd.extend(["--since", f"@{secs}"])
     if follow:
         cmd.append("-f")
     try:
@@ -372,14 +421,17 @@ def main(
             typer.echo(f"Failed to start unit: {e}", err=True)
             raise typer.Exit(code=1)
 
-        # Report PID and hint
+        # Report status, pid and hint (use live properties)
         path = await get_unit_path(bus, unit_name)
         pid_val = 0
         state = "unknown"
+        sub = ""
         if path:
             try:
-                pid_val = await get_main_pid(bus, path)
-                state = "active"
+                st = await get_unit_status(bus, path)
+                pid_val = int(st.get("MainPID") or 0)
+                state = st.get("ActiveState", "unknown")
+                sub = st.get("SubState", "")
             except Exception:
                 pass
 
@@ -387,7 +439,10 @@ def main(
         # Human-friendly output
         typer.echo(f"name: {unit_name}")
         typer.echo(f"pid: {pid_val}")
-        typer.echo(f"state: {state}")
+        if sub and sub != "running":
+            typer.echo(f"state: {state} ({sub})")
+        else:
+            typer.echo(f"state: {state}")
         typer.echo(f"log: {hint}")
         # Machine-tail line if non-TTY
         if not is_tty():

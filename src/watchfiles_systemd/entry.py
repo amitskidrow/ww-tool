@@ -8,6 +8,7 @@ from . import cli as _cli
 SUBCOMMANDS = {
     "ps",
     "pid",
+    "status",
     "logs",
     "restart",
     "stop",
@@ -65,6 +66,9 @@ def main(argv: List[str] | None = None):
                 return app()
             if action == "rm":
                 sys.argv = ["ww", "rm", unit] + rest
+                return app()
+            if action == "status":
+                sys.argv = ["ww", "status", unit] + rest
                 return app()
 
             # If only a unit was provided, default to showing logs

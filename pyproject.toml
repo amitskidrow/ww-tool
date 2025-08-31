@@ -1,6 +1,6 @@
 [project]
 name = "watchfiles-systemd"
-version = "0.1.9"
+version = "0.1.10"
 description = "Zero-config systemd user transient services with watchfiles live reload (ww)"
 readme = "README.md"
 requires-python = ">=3.9"

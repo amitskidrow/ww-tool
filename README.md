@@ -4,6 +4,7 @@ Zero‑config background runner with live reload. Starts your Python target as a
 
 - Start: `ww <path>` (file or directory)
 - Logs: `ww logs <name> -n 100` or `ww logs <name> -f`
+  - By default, shows logs since the last successful start; add `-a/--all` for full history.
 - List: `ww ps`
 - Status: `ww status <name>`
 - PID: `ww pid <name>`
@@ -33,6 +34,7 @@ See `prd.md` for detailed behavior and acceptance criteria.
 - Follow logs: use the printed hint, e.g. `ww logs ww-test.service -f`
 - Verify live reload: edit `test/test.py` and save; the process restarts and logs continue incrementing.
 - List running jobs: `ww ps`
+  - Shows derived state like `active`, `active(running)`, or `flapping` when the unit is auto‑restarting.
 - Stop/remove when done: `ww rm ww-test.service` (or `ww rm-all` to clean everything)
 
 Tip: if `ww` is not globally installed, you can run the same test without installing globally via `uvx`:

@@ -87,20 +87,55 @@ async def get_main_pid(bus: MessageBus, unit_path: str) -> int:
 
 
 async def get_unit_status(bus: MessageBus, unit_path: str) -> dict[str, Any]:
-    """Fetch Unit.ActiveState, Unit.SubState and Service.MainPID for a unit path."""
+    """Fetch a snapshot of key Unit/Service properties.
+
+    Returns a dict including:
+      - ActiveState, SubState (Unit)
+      - MainPID, NRestarts, Result (Service) when available
+      - ActiveEnterTimestamp (Unit) when available
+    """
     intro = await bus.introspect(SYSTEMD_DEST, unit_path)
     obj = bus.get_proxy_object(SYSTEMD_DEST, unit_path, intro)
     props = obj.get_interface(IFACE_PROPERTIES)
     def _val(v):
         return v.value if isinstance(v, Variant) else v
-    active = _val(await props.call_get("org.freedesktop.systemd1.Unit", "ActiveState"))
-    sub = _val(await props.call_get("org.freedesktop.systemd1.Unit", "SubState"))
-    pid = _val(await props.call_get(IFACE_SERVICE, "MainPID"))
+    st: dict[str, Any] = {}
+    # Unit-level
     try:
-        pid = int(pid)
+        st["ActiveState"] = _val(await props.call_get("org.freedesktop.systemd1.Unit", "ActiveState"))
     except Exception:
-        pid = 0
-    return {"ActiveState": active, "SubState": sub, "MainPID": pid}
+        st["ActiveState"] = "unknown"
+    try:
+        st["SubState"] = _val(await props.call_get("org.freedesktop.systemd1.Unit", "SubState"))
+    except Exception:
+        st["SubState"] = "unknown"
+    try:
+        ts = _val(await props.call_get("org.freedesktop.systemd1.Unit", "ActiveEnterTimestamp"))
+        # Timestamp is in microseconds since the epoch
+        try:
+            st["ActiveEnterTimestamp"] = int(ts)
+        except Exception:
+            pass
+    except Exception:
+        pass
+
+    # Service-level
+    try:
+        pid = _val(await props.call_get(IFACE_SERVICE, "MainPID"))
+        try:
+            pid = int(pid)
+        except Exception:
+            pid = 0
+        st["MainPID"] = pid
+    except Exception:
+        st["MainPID"] = 0
+    for key in ("NRestarts", "Result", "ExecMainStatus", "ExecMainCode"):
+        try:
+            st[key] = _val(await props.call_get(IFACE_SERVICE, key))
+        except Exception:
+            # optional, ignore if not present on this systemd
+            pass
+    return st
 
 
 async def stop_unit(bus: MessageBus, unit_name: str, mode: str = "fail"):
