@@ -1,0 +1,13 @@
+README.md
+pyproject.toml
+src/watchfiles_systemd/__init__.py
+src/watchfiles_systemd/cli.py
+src/watchfiles_systemd/entry.py
+src/watchfiles_systemd/systemd_bus.py
+src/watchfiles_systemd/util.py
+src/watchfiles_systemd.egg-info/PKG-INFO
+src/watchfiles_systemd.egg-info/SOURCES.txt
+src/watchfiles_systemd.egg-info/dependency_links.txt
+src/watchfiles_systemd.egg-info/entry_points.txt
+src/watchfiles_systemd.egg-info/requires.txt
+src/watchfiles_systemd.egg-info/top_level.txt

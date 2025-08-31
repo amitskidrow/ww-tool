@@ -1,0 +1,24 @@
+Metadata-Version: 2.4
+Name: watchfiles-systemd
+Version: 0.1.0
+Summary: Zero-config systemd user transient services with watchfiles live reload (ww)
+Author-email: ww <noreply@example.com>
+Requires-Python: >=3.9
+Description-Content-Type: text/markdown
+Requires-Dist: typer>=0.12
+Requires-Dist: dbus-next>=0.2.3
+
+# ww — watchfiles + systemd (user)
+
+Zero‑config background runner with live reload. Starts your Python target as a transient user service via systemd D‑Bus and wraps it with watchfiles for restarts on code changes.
+
+- Start: `ww <path>` (file or directory)
+- Logs: `ww logs <name> -n 100` or `ww logs <name> -f`
+- List: `ww ps`
+- PID: `ww pid <name>`
+- Control: `ww restart|stop|rm <name>` or `ww restart-all|stop-all|rm-all`
+- Doctor: `ww doctor`
+
+Install via uvx (no global installs): `uvx --from <REPO_URL> ww --help`
+
+See `prd.md` for detailed behavior and acceptance criteria.

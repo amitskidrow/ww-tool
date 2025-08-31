@@ -1,0 +1,2 @@
+[console_scripts]
+ww = watchfiles_systemd.entry:main

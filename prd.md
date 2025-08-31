@@ -1,4 +1,4 @@
-# PRD — `bg`: Zero-config background runner with live reload (Combo A)
+# PRD — `ww`: Zero-config background runner with live reload (Combo A)
 
 ## 1) Purpose & scope
 
@@ -13,9 +13,32 @@ Build a **universal Linux** CLI that starts any Python target in the background 
 
 ---
 
+## 2.5) Installation (uvx or pipx via Git)
+
+- Preferred runners are `uvx` (no global install; runs tools from a Git repo) or `pipx` (global install from Git).
+- Reference: see `watchexec-systemd/commands.md` for the overall pattern; here we standardize on uvx/pipx and Git-based installs.
+
+Quick options (replace `<REPO_URL>` with the Git URL for this project’s repo):
+
+- uvx (no global install):
+  - `uvx --from <REPO_URL> ww --help`
+  - `uvx --from <REPO_URL> ww --version`
+
+- pipx (global):
+  - Install: `pipx install git+<REPO_URL>`
+  - Upgrade: `pipx upgrade git+<REPO_URL>`
+  - Run: `ww --help`
+
+Notes:
+- `uvx` is the `uv` tool runner (isolated, ephemeral environments). It’s ideal for CI, agents, or trying the tool without polluting the system.
+- `pipx` installs a stable, global `ww` entrypoint into `~/.local/bin`.
+- The service runtime continues to use `uvx` to run `watchfiles` inside the transient unit, so end-users do not need to manage Python environments for reload behavior.
+
+---
+
 ## 3) Product goals
 
-1. **One command, one arg:** `bg <path>` where `<path>` is either a file or a directory.
+1. **One command, one arg:** `ww <path>` where `<path>` is either a file or a directory.
 2. **No config files, no unit files on disk:** Always use **transient** user units.
 3. **Live reload by default:** Wrap the user command with **watchfiles**; recursive when `<path>` is a directory; single-file when `<path>` is a file. CLI executes `watchfiles` via **uvx** so users don’t manage environments. ([watchfiles.helpmanual.io][2], [Astral Docs][4])
 4. **Full observability:** Unit-scoped journald logs (history + follow) and immediate PID truth via D-Bus. ([Man7][7])
@@ -35,24 +58,24 @@ Build a **universal Linux** CLI that starts any Python target in the background 
 
 ### 5.1 Commands (final surface)
 
-* `bg <path>` — Start background job.
+* `ww <path>` — Start background job.
 
   * If `<path>` is a **file**: run `python <file>` with **file-scoped** reload.
   * If `<path>` is a **directory** (e.g., `.`): infer an entrypoint and run with **recursive** reload.
   * On success, print: **unit name**, **MainPID**, short **log hint**.
-* `bg ps` — List managed units with `Name`, `ActiveState`, `MainPID`.
-* `bg pid <name>` — Print `Service.MainPID`.
-* `bg logs <name> [-n N] [-f]` — Show history / follow via journald.
-* `bg restart <name>` · `bg stop <name>` · `bg rm <name>` — Control one job.
-* `bg restart-all` · `bg stop-all` · `bg rm-all` — Bulk actions across `bg-*`.
-* `bg doctor` — Diagnose user D-Bus reachability, journald availability, and whether **linger** is needed; print the fix when applicable. ([Man7][3], [ArchWiki][5])
+* `ww ps` — List managed units with `Name`, `ActiveState`, `MainPID`.
+* `ww pid <name>` — Print `Service.MainPID`.
+* `ww logs <name> [-n N] [-f]` — Show history / follow via journald.
+* `ww restart <name>` · `ww stop <name>` · `ww rm <name>` — Control one job.
+* `ww restart-all` · `ww stop-all` · `ww rm-all` — Bulk actions across `ww-*`.
+* `ww doctor` — Diagnose user D-Bus reachability, journald availability, and whether **linger** is needed; print the fix when applicable. ([Man7][3], [ArchWiki][5])
 
 ### 5.2 Argument/flag policy
 
 * **No flags** needed for normal use.
 * Future (optional) env-switches (not v1 flags):
 
-  * `BG_NAME` (override unit slug), `BG_IGNORE` (additional ignore globs), `BG_WF_VERSION` (pin `watchfiles` version).
+  * `WW_NAME` (override unit slug), `WW_IGNORE` (additional ignore globs), `WW_WF_VERSION` (pin `watchfiles` version).
 * Output auto-adapts: if stdout is non-TTY, append a one-line JSON summary (`name`, `pid`, `state`, `log_hint`) for machine callers.
 
 ---
@@ -81,7 +104,7 @@ Build a **universal Linux** CLI that starts any Python target in the background 
 
 * Created with D-Bus **`StartTransientUnit`**. Minimal properties:
 
-  * `Description="bg:<name>"`, `WorkingDirectory=<root>`, `Environment=[…]`
+  * `Description="ww:<name>"`, `WorkingDirectory=<root>`, `Environment=[…]`
   * `ExecStart` as D-Bus signature **`a(sasb)`** (path, argv\[], ignore\_failure).
   * `Restart="on-failure"`, `RestartSec="3s"`, `StandardOutput="journal"`, `StandardError="journal"`.
     The `ExecStart` signature requirement is a key gotcha; it must be structured, not a single string. ([Gist][8], [Stack Overflow][9])
@@ -94,7 +117,7 @@ Build a **universal Linux** CLI that starts any Python target in the background 
 
 ### 6.5 Naming & collisions
 
-* Default unit name: `bg-<slug>` derived from file or folder basename. If taken, suffix with `-2`, `-3`, …
+* Default unit name: `ww-<slug>` derived from file or folder basename. If taken, suffix with `-2`, `-3`, …
 
 ### 6.6 Headless longevity
 
@@ -118,7 +141,7 @@ Build a **universal Linux** CLI that starts any Python target in the background 
 
 * Start: `StartTransientUnit(name, mode="fail", properties=[…])`.
 * Inspect: `GetUnit` → `org.freedesktop.systemd1.Unit`; then `org.freedesktop.systemd1.Service` → `MainPID`, `ExecMainStatus`, `ActiveState`.
-* List: `ListUnits()` → filter `bg-*`.
+* List: `ListUnits()` → filter `ww-*`.
 * Control: `StopUnit`, `StartUnit`, `RestartUnit`, `ResetFailed`.
 * Subscribe: listen to `PropertiesChanged` for liveness/state updates. (All via systemd D-Bus API.) ([Freedesktop][1])
 
@@ -130,11 +153,11 @@ Build a **universal Linux** CLI that starts any Python target in the background 
 
 * Show **unit**, **MainPID**, **state=active**, and **how to see logs**:
 
-  * e.g., `bg logs bg-api -f` (follows live logs), `bg logs bg-api -n 200` (tail). ([Man7][3])
+  * e.g., `ww logs ww-api -f` (follows live logs), `ww logs ww-api -n 200` (tail). ([Man7][3])
 
 ### 8.2 Success start (non-TTY / machine)
 
-* Print a final JSON line: `{"name":"bg-api","pid":12345,"state":"active","log_hint":"bg logs bg-api -f"}`.
+* Print a final JSON line: `{"name":"ww-api","pid":12345,"state":"active","log_hint":"ww logs ww-api -f"}`.
 
 ### 8.3 Failure modes
 
@@ -162,29 +185,29 @@ Build a **universal Linux** CLI that starts any Python target in the background 
 
 ## 11) Telemetry (optional, off by default)
 
-* A single **opt-in** counter for starts/stops (no file paths, no command bodies). Respect `NO_COLOR`/`BG_NO_TELEMETRY`.
+* A single **opt-in** counter for starts/stops (no file paths, no command bodies). Respect `NO_COLOR`/`WW_NO_TELEMETRY`.
 
 ---
 
 ## 12) Acceptance criteria (must-pass)
 
 1. **Start & PID truth**
-   `bg main.py` prints unit + `MainPID`; `bg pid <name>` returns a live PID; `bg ps` shows `ActiveState=active`. (D-Bus `Service.MainPID`.) ([Freedesktop][1])
+   `ww main.py` prints unit + `MainPID`; `ww pid <name>` returns a live PID; `ww ps` shows `ActiveState=active`. (D-Bus `Service.MainPID`.) ([Freedesktop][1])
 
 2. **Zero-config live reload (file)**
    Edit `main.py`; process restarts automatically; logs show a clean stop/start sequence. (Reload behavior via `watchfiles` CLI.) ([watchfiles.helpmanual.io][2])
 
 3. **Zero-config live reload (directory)**
-   `bg .` in a package dir with `__main__.py`; any `.py` change triggers restart; ignores apply. ([watchfiles.helpmanual.io][2])
+   `ww .` in a package dir with `__main__.py`; any `.py` change triggers restart; ignores apply. ([watchfiles.helpmanual.io][2])
 
 4. **Logging**
-   `bg logs <name> -n 100` returns historical logs; `-f` follows; unit-scoped via `--user -u`. `USER_UNIT`/`UNIT` fields exist. ([Man7][3])
+   `ww logs <name> -n 100` returns historical logs; `-f` follows; unit-scoped via `--user -u`. `USER_UNIT`/`UNIT` fields exist. ([Man7][3])
 
 5. **Bulk orchestration**
-   Run two jobs, then `bg restart-all` restarts both; `bg rm-all` stops and deletes both transient units; `bg ps` shows none.
+   Run two jobs, then `ww restart-all` restarts both; `ww rm-all` stops and deletes both transient units; `ww ps` shows none.
 
 6. **Headless longevity**
-   After `loginctl enable-linger $USER`, a job started with `bg` continues running post-logout/login. Provide the exact command if not enabled. ([ArchWiki][5])
+   After `loginctl enable-linger $USER`, a job started with `ww` continues running post-logout/login. Provide the exact command if not enabled. ([ArchWiki][5])
 
 7. **No global installs required**
    `watchfiles` is executed via `uvx` and works on a host with no prior Python env setup. `uvx` is documented alias for `uv tool run`. ([Astral Docs][4])
@@ -219,7 +242,18 @@ Build a **universal Linux** CLI that starts any Python target in the background 
 
 ## 15) Rollout & docs
 
-* A single README page with: quick start (`bg <file>`, `bg .`), logs, ps/pid, bulk ops, linger note, and troubleshooting (watch limits, journald storage). Link to upstream docs for `watchfiles`, `journalctl`, `uvx`, and systemd D-Bus. ([watchfiles.helpmanual.io][2], [Man7][3], [Astral Docs][4], [Freedesktop][1])
+* A single README page with: quick start (`ww <file>`, `ww .`), logs, ps/pid, bulk ops, linger note, and troubleshooting (watch limits, journald storage). Link to upstream docs for `watchfiles`, `journalctl`, `uvx`, and systemd D-Bus. ([watchfiles.helpmanual.io][2], [Man7][3], [Astral Docs][4], [Freedesktop][1])
+
+---
+
+## 16) Deploy workflow
+
+- A `deploy.sh` script (mirrors the one in `watchexec-systemd`) will:
+  - Optionally bump patch version in `pyproject.toml` if present.
+  - Commit and push to `main`.
+  - Verify remote install using `uvx --from <origin_url> ww --version`.
+  - Optionally verify `pipx` global install if `pipx` is available.
+- This keeps release steps consistent across both repos while using Git-based distribution for installs.
 
 ---
 
