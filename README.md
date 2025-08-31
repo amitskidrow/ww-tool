@@ -11,4 +11,9 @@ Zero‑config background runner with live reload. Starts your Python target as a
 
 Install via uvx (no global installs): `uvx --from <REPO_URL> ww --help`
 
+Local dev with uv:
+- Create env: `uv venv`
+- Install: `uv pip install -e .`
+- Run: `.venv/bin/ww --help`
+
 See `prd.md` for detailed behavior and acceptance criteria.

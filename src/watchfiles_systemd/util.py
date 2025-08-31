@@ -100,6 +100,19 @@ def build_watchfiles_exec(inner_argv: Iterable[str], watch_paths: Optional[list[
 
     target = " ".join(shlex.quote(a) for a in inner_argv)
     base = ["uvx", tool, "--filter", "python", "--target-type", "command", target]
+
+    # Combine ignore paths: built-ins plus optional WW_IGNORE (comma-separated)
+    extra = os.getenv("WW_IGNORE", "").strip()
+    ignores = [p.rstrip("/") for p in PY_IGNORES]
+    if extra:
+        # split on comma, strip whitespace and trailing slashes
+        ignores.extend(x.strip().rstrip("/") for x in extra.split(",") if x.strip())
+    # de-dupe while preserving order
+    seen = set()
+    ignores = [x for x in ignores if not (x in seen or seen.add(x))]
+    if ignores:
+        base.extend(["--ignore-paths", ",".join(ignores)])
+
     if watch_paths:
         base.extend(watch_paths)
     return base

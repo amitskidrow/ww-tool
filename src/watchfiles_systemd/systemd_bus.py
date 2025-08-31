@@ -112,5 +112,6 @@ async def reset_failed_unit(bus: MessageBus, unit_name: str):
 
 def build_execstart_variant(argv: Iterable[str]):
     """Build Variant for ExecStart: a(sasb)"""
-    arr = [["/usr/bin/env", list(["env", *argv]), False]]
+    # Use /usr/bin/env to resolve the first argv item via PATH (e.g. 'uvx')
+    arr = [["/usr/bin/env", list(argv), False]]
     return Variant("a(sasb)", arr)
