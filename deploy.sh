@@ -58,6 +58,23 @@ commit_and_push() {
   echo "Pushed to GitHub"
 }
 
+force_clean_global() {
+  echo "Force-cleaning existing ww installs (uv, pipx, pip, shims)"
+  # uv tool uninstall
+  if command -v uv >/dev/null 2>&1; then
+    uv tool uninstall ww >/dev/null 2>&1 || true
+  fi
+  # pipx uninstall
+  if command -v pipx >/dev/null 2>&1; then
+    pipx uninstall watchfiles-systemd >/dev/null 2>&1 || true
+  fi
+  # user/system pip uninstall attempts
+  python3 -m pip uninstall -y watchfiles-systemd >/dev/null 2>&1 || true
+  pip3 uninstall -y watchfiles-systemd >/dev/null 2>&1 || true
+  # remove shims
+  rm -f "$HOME/.local/bin/ww" || true
+}
+
 canonical_git_spec() {
   # Convert a git remote URL into a pip/uv-compatible VCS spec
   # Input examples:
@@ -112,8 +129,8 @@ install_remote() {
 
   # Preferred: global install via uv tool
   if command -v uv >/dev/null 2>&1; then
-    echo "Installing globally via: uv tool install --from $spec ww"
-    if UV_TOOL_OUT=$(uv tool install --force --from "$spec" ww 2>&1); then
+    echo "Installing globally via: uv tool install --force --from $spec watchfiles-systemd"
+    if UV_TOOL_OUT=$(uv tool install --force --from "$spec" watchfiles-systemd 2>&1); then
       echo "$UV_TOOL_OUT" | sed -n '1,80p'
       echo "ww --version -> $(ww --version 2>&1 || true)"
     else
@@ -121,8 +138,8 @@ install_remote() {
     fi
   elif command -v pipx >/dev/null 2>&1; then
     # Fallback: pipx with explicit spec+app to avoid VCS URL parsing issues
-    echo "Installing globally via: pipx install --spec $spec ww"
-    if PIPX_OUT=$(pipx install --force --spec "$spec" ww 2>&1); then
+    echo "Installing globally via: pipx install --force --spec $spec watchfiles-systemd"
+    if PIPX_OUT=$(pipx install --force --spec "$spec" watchfiles-systemd 2>&1); then
       echo "$PIPX_OUT" | sed -n '1,80p'
       if command -v ww >/dev/null 2>&1; then
         echo "ww --version -> $(ww --version 2>&1 || true)"
@@ -152,7 +169,7 @@ install_remote() {
 
   # Show all ww candidates for diagnostics
   echo "ww on PATH (all candidates):"
-  command -v -a ww || true
+  type -a ww 2>/dev/null || command -v ww || true
 
   # If an active virtualenv shadows ww, hint (or optionally clean)
   if [[ -n "${VIRTUAL_ENV:-}" ]]; then
@@ -175,6 +192,9 @@ install_remote() {
 main() {
   bump_version
   commit_and_push
+  if [[ "${WW_FORCE_CLEAN:-}" == "1" ]]; then
+    force_clean_global || true
+  fi
   install_remote
 }
 
