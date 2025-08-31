@@ -11,6 +11,13 @@ Zero‑config background runner with live reload. Starts your Python target as a
 
 Install via uvx (no global installs): `uvx --from <REPO_URL> ww --help`
 
+Global install (preferred via uv):
+- Install/upgrade: `uv tool install --force --from <REPO_URL> ww`
+- Ensure `~/.local/bin` is on your `PATH` and run: `ww --version`
+
+Alternative with pipx:
+- Install/upgrade: `pipx install --force --spec git+<REPO_URL>@main ww`
+
 Local dev with uv:
 - Create env: `uv venv`
 - Install: `uv pip install -e .`

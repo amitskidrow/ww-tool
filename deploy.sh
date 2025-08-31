@@ -58,6 +58,30 @@ commit_and_push() {
   echo "Pushed to GitHub"
 }
 
+canonical_git_spec() {
+  # Convert a git remote URL into a pip/uv-compatible VCS spec
+  # Input examples:
+  #   https://github.com/user/repo.git
+  #   git@github.com:user/repo.git
+  # Output example:
+  #   git+https://github.com/user/repo.git@main
+  local url="$1"
+  local branch="main"
+  # If origin is SSH form, convert to https
+  if [[ "$url" =~ ^git@([^:]+):(.+)$ ]]; then
+    url="https://${BASH_REMATCH[1]}/${BASH_REMATCH[2]}"
+  fi
+  # Ensure it starts with git+
+  if [[ ! "$url" =~ ^git\+ ]]; then
+    url="git+${url}"
+  fi
+  # Append @<branch> only if not present
+  if [[ ! "$url" =~ @[^#]+$ && ! "$url" =~ @[^#]+# ]]; then
+    url="${url}@${branch}"
+  fi
+  printf "%s" "$url"
+}
+
 install_remote() {
   # Determine origin URL for this repo
   local origin
@@ -70,33 +94,81 @@ install_remote() {
   echo "Waiting for remote to update..."
   sleep 15
 
-  # Try uvx tool-run from Git
+  # Normalize to a VCS spec understood by uv/pip
+  local spec
+  spec=$(canonical_git_spec "$origin")
+
+  # Quick smoke via uvx (ephemeral, not global)
   if command -v uvx >/dev/null 2>&1; then
     echo "Testing uvx tool run from: $origin"
-    if UVX_OUT=$(uvx --from "$origin" ww --version 2>&1); then
+    if UVX_OUT=$(uvx --from "$spec" ww --version 2>&1); then
       echo "uvx ww --version -> $UVX_OUT"
     else
-      echo "uvx run failed:\n$UVX_OUT"
+      echo -e "uvx run failed:\n$UVX_OUT"
     fi
   else
     echo "uvx not found; skipping uvx check"
   fi
 
-  # Try pipx global install from Git
-  if command -v pipx >/dev/null 2>&1; then
-    echo "Testing pipx install from: $origin"
-    if PIPX_OUT=$(pipx install --force "$origin" 2>&1); then
-      echo "$PIPX_OUT" | sed -n '1,50p'
+  # Preferred: global install via uv tool
+  if command -v uv >/dev/null 2>&1; then
+    echo "Installing globally via: uv tool install --from $spec ww"
+    if UV_TOOL_OUT=$(uv tool install --force --from "$spec" ww 2>&1); then
+      echo "$UV_TOOL_OUT" | sed -n '1,80p'
+      echo "ww --version -> $(ww --version 2>&1 || true)"
+    else
+      echo -e "uv tool install failed, output follows:\n$UV_TOOL_OUT"
+    fi
+  elif command -v pipx >/dev/null 2>&1; then
+    # Fallback: pipx with explicit spec+app to avoid VCS URL parsing issues
+    echo "Installing globally via: pipx install --spec $spec ww"
+    if PIPX_OUT=$(pipx install --force --spec "$spec" ww 2>&1); then
+      echo "$PIPX_OUT" | sed -n '1,80p'
       if command -v ww >/dev/null 2>&1; then
         echo "ww --version -> $(ww --version 2>&1 || true)"
       else
         echo "ww command not found after pipx install"
       fi
     else
-      echo "pipx install failed"
+      echo -e "pipx install failed, output follows:\n$PIPX_OUT"
     fi
   else
-    echo "pipx not found; skipping pipx check"
+    echo "Neither uv nor pipx found for global install. Consider installing Astral uv (preferred) or pipx."
+  fi
+
+  # Cleanup: remove older pipx-installed copy if present to avoid PATH conflicts
+  if command -v pipx >/dev/null 2>&1; then
+    if pipx list 2>/dev/null | grep -qE '^package +watchfiles-systemd[[:space:]]'; then
+      # If pipx manages watchfiles-systemd but our current ww resolves elsewhere, remove the pipx one
+      current_path=$(command -v ww || true)
+      # pipx which may fail if not active; guard it
+      pipx_path=$(pipx which ww 2>/dev/null || true)
+      if [[ -n "$pipx_path" && -n "$current_path" && "$pipx_path" != "$current_path" ]]; then
+        echo "Removing older pipx install to avoid shadowing: pipx uninstall watchfiles-systemd"
+        pipx uninstall watchfiles-systemd || true
+      fi
+    fi
+  fi
+
+  # Show all ww candidates for diagnostics
+  echo "ww on PATH (all candidates):"
+  command -v -a ww || true
+
+  # If an active virtualenv shadows ww, hint (or optionally clean)
+  if [[ -n "${VIRTUAL_ENV:-}" ]]; then
+    if command -v ww >/dev/null 2>&1; then
+      local ww_path
+      ww_path=$(command -v ww)
+      if [[ "$ww_path" == "$VIRTUAL_ENV"/bin/ww ]]; then
+        echo "Note: Active virtualenv shadows global ww: $ww_path"
+        echo "Deactivate venv or upgrade/uninstall ww in that venv to use the global install."
+        if [[ "${WW_CLEAN_LOCAL_VENV:-}" == "1" ]]; then
+          echo "WW_CLEAN_LOCAL_VENV=1 set: uninstalling watchfiles-systemd from current venv"
+          "$VIRTUAL_ENV/bin/python" -m pip uninstall -y watchfiles-systemd || true
+          rm -f "$VIRTUAL_ENV/bin/ww" || true
+        fi
+      fi
+    fi
   fi
 }
 
@@ -107,4 +179,3 @@ main() {
 }
 
 main "$@"
-
