@@ -17,6 +17,7 @@ from .systemd_bus import (
     get_main_pid,
     get_unit_path,
     list_units,
+    get_unit_status,
     reset_failed_unit,
     restart_unit,
     start_transient,
@@ -33,6 +34,7 @@ from .util import (
     to_slug,
     unit_name_from_slug,
 )
+from .util import _resolve_uvx_bin
 
 
 app = typer.Typer(
@@ -58,9 +60,11 @@ def _root(
 
 def _ensure_tools():
     # Ensure uvx exists at runtime; advise if missing.
-    if not shutil.which("uvx"):
+    uvx_bin = _resolve_uvx_bin()
+    ok = bool(shutil.which(uvx_bin) or os.path.exists(uvx_bin))
+    if not ok:
         typer.echo(
-            "uvx not found in PATH. Install uv (Astral) or use 'uvx --from <repo> ww'.",
+            "uvx not found. Install uv (Astral) or set WW_UV_BIN to absolute path.",
             err=True,
         )
 
@@ -115,14 +119,42 @@ def ps():
                 continue
             path = u["Path"]
             try:
-                pid = await get_main_pid(bus, path)
+                st = await get_unit_status(bus, path)
+                state = st["ActiveState"]
+                pid = int(st["MainPID"]) if st.get("MainPID") is not None else 0
+                # If systemd says activating but we have a PID, treat as active
+                if state == "activating" and pid > 0:
+                    state = "active"
             except Exception:
+                state = u.get("ActiveState", "unknown")
                 pid = 0
-            rows.append((name, u["ActiveState"], pid))
+            rows.append((name, state, pid))
         for name, state, pid in rows:
             typer.echo(f"{name}\t{state}\t{pid}")
 
     asyncio.run(_ps())
+
+
+@app.command()
+def status(name: str):
+    """Show detailed status for one unit (state, substate, pid)."""
+    async def _status():
+        bus = await connect_user_bus()
+        unit = name if name.endswith(".service") else f"{name}.service"
+        path = await get_unit_path(bus, unit)
+        if not path:
+            typer.echo(f"Unit not found: {unit}", err=True)
+            raise typer.Exit(code=1)
+        st = await get_unit_status(bus, path)
+        state = st.get("ActiveState", "unknown")
+        sub = st.get("SubState", "unknown")
+        pid_val = int(st.get("MainPID") or 0)
+        typer.echo(f"name: {unit}")
+        typer.echo(f"state: {state} ({sub})")
+        typer.echo(f"pid: {pid_val}")
+        typer.echo(f"log: ww logs {unit} -f")
+
+    asyncio.run(_status())
 
 
 @app.command()
@@ -281,8 +313,33 @@ def doctor():
             # Non-fatal
             pass
 
+        # uvx + watchfiles checks (best-effort)
+        uvx_bin = _resolve_uvx_bin()
+        uvx_ok, uvx_ver = False, ""
+        try:
+            r = subprocess.run([uvx_bin, "--version"], capture_output=True, text=True)
+            uvx_ok = r.returncode == 0
+            uvx_ver = (r.stdout or r.stderr).strip().splitlines()[:1]
+            uvx_ver = uvx_ver[0] if uvx_ver else ""
+        except Exception:
+            uvx_ok = False
+
+        wf_spec = "watchfiles"
+        if os.getenv("WW_WF_VERSION"):
+            wf_spec = f"watchfiles=={os.getenv('WW_WF_VERSION')}"
+        wf_ok = False
+        try:
+            r = subprocess.run([uvx_bin, "--from", wf_spec, "python", "-m", "watchfiles", "--help"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=15)
+            wf_ok = r.returncode == 0
+        except subprocess.TimeoutExpired:
+            wf_ok = False
+        except Exception:
+            wf_ok = False
+
         typer.echo(f"user D-Bus: {'ok' if ok_dbus else 'FAIL'}")
         typer.echo(f"journalctl --user: {'ok' if ok_journal else 'FAIL'}")
+        typer.echo(f"uvx: {'ok' if uvx_ok else 'FAIL'} {('(' + uvx_ver + ')') if uvx_ver else ''}")
+        typer.echo(f"watchfiles via uvx: {'ok' if wf_ok else 'FAIL'}")
         if linger_hint:
             typer.echo(f"linger: off (enable via: {linger_hint})")
         else:

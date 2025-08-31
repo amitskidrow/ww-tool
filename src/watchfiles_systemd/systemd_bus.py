@@ -86,6 +86,23 @@ async def get_main_pid(bus: MessageBus, unit_path: str) -> int:
     return int(pid)
 
 
+async def get_unit_status(bus: MessageBus, unit_path: str) -> dict[str, Any]:
+    """Fetch Unit.ActiveState, Unit.SubState and Service.MainPID for a unit path."""
+    intro = await bus.introspect(SYSTEMD_DEST, unit_path)
+    obj = bus.get_proxy_object(SYSTEMD_DEST, unit_path, intro)
+    props = obj.get_interface(IFACE_PROPERTIES)
+    def _val(v):
+        return v.value if isinstance(v, Variant) else v
+    active = _val(await props.call_get("org.freedesktop.systemd1.Unit", "ActiveState"))
+    sub = _val(await props.call_get("org.freedesktop.systemd1.Unit", "SubState"))
+    pid = _val(await props.call_get(IFACE_SERVICE, "MainPID"))
+    try:
+        pid = int(pid)
+    except Exception:
+        pid = 0
+    return {"ActiveState": active, "SubState": sub, "MainPID": pid}
+
+
 async def stop_unit(bus: MessageBus, unit_name: str, mode: str = "fail"):
     mgr = await get_manager(bus)
     return await mgr.call_stop_unit(unit_name, mode)
@@ -111,7 +128,12 @@ async def reset_failed_unit(bus: MessageBus, unit_name: str):
 
 
 def build_execstart_variant(argv: Iterable[str]):
-    """Build Variant for ExecStart: a(sasb)"""
-    # Use /usr/bin/env to resolve the first argv item via PATH (e.g. 'uvx')
-    arr = [["/usr/bin/env", list(argv), False]]
+    """Build Variant for ExecStart: a(sasb)
+
+    argv[0] should be an absolute or resolvable executable.
+    """
+    args = list(argv)
+    if not args:
+        raise ValueError("empty argv for ExecStart")
+    arr = [[args[0], args, False]]
     return Variant("a(sasb)", arr)

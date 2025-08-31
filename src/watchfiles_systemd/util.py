@@ -91,15 +91,39 @@ def resolve_target(path: Path) -> ResolvedTarget:
     raise FileNotFoundError(f"Path not found: {p}")
 
 
+def _resolve_uvx_bin() -> str:
+    """Resolve uvx binary path. Honors WW_UV_BIN, falls back to PATH lookup."""
+    prefer = os.getenv("WW_UV_BIN", "uvx").strip()
+    if os.path.sep in prefer:
+        return prefer
+    import shutil
+
+    which = shutil.which(prefer)
+    return which or prefer
+
+
 def build_watchfiles_exec(inner_argv: Iterable[str], watch_paths: Optional[list[str]] = None) -> list[str]:
-    # Use uvx to run watchfiles without requiring a global install
+    # Use uvx + python -m watchfiles to avoid console-script resolution pitfalls
     wf_version = os.getenv("WW_WF_VERSION")
-    tool = "watchfiles" if not wf_version else f"watchfiles=={wf_version}"
+    spec = "watchfiles" if not wf_version else f"watchfiles=={wf_version}"
     # Built-in python filter; target is a single shell command string
     import shlex
 
     target = " ".join(shlex.quote(a) for a in inner_argv)
-    base = ["uvx", tool, "--filter", "python", "--target-type", "command", target]
+    uvx_bin = _resolve_uvx_bin()
+    base = [
+        uvx_bin,
+        "--from",
+        spec,
+        "python",
+        "-m",
+        "watchfiles",
+        "--filter",
+        "python",
+        "--target-type",
+        "command",
+        target,
+    ]
 
     # Combine ignore paths: built-ins plus optional WW_IGNORE (comma-separated)
     extra = os.getenv("WW_IGNORE", "").strip()
@@ -122,4 +146,18 @@ def env_list(extra_ignores: Optional[str] = None) -> list[str]:
     env = []
     if extra_ignores:
         env.append(f"WW_IGNORE={extra_ignores}")
+    # Inherit PATH/HOME so systemd environment can resolve tools and caches
+    path = os.environ.get("PATH")
+    home = os.environ.get("HOME")
+    if path:
+        env.append(f"PATH={path}")
+    if home:
+        env.append(f"HOME={home}")
+    # Pass-through overrides for visibility/debugging
+    uv_bin = os.environ.get("WW_UV_BIN")
+    if uv_bin:
+        env.append(f"WW_UV_BIN={uv_bin}")
+    wf_version = os.environ.get("WW_WF_VERSION")
+    if wf_version:
+        env.append(f"WW_WF_VERSION={wf_version}")
     return env
