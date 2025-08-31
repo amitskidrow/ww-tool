@@ -49,21 +49,28 @@ def main(argv: List[str] | None = None):
 
             # Map common actions; "follow" is a friendly alias for logs -f
             if action in {"logs", "log"}:
-                return _cli.logs(unit)  # type: ignore[arg-type]
+                sys.argv = ["ww", "logs", unit] + rest
+                return app()
             if action in {"follow", "f"}:
-                return _cli.logs(unit, follow=True)  # type: ignore[arg-type]
+                sys.argv = ["ww", "logs", unit, "-f"] + rest
+                return app()
             if action == "pid":
-                return _cli.pid(unit)  # type: ignore[arg-type]
+                sys.argv = ["ww", "pid", unit] + rest
+                return app()
             if action == "restart":
-                return _cli.restart(unit)  # type: ignore[arg-type]
+                sys.argv = ["ww", "restart", unit] + rest
+                return app()
             if action == "stop":
-                return _cli.stop(unit)  # type: ignore[arg-type]
+                sys.argv = ["ww", "stop", unit] + rest
+                return app()
             if action == "rm":
-                return _cli.rm(unit)  # type: ignore[arg-type]
+                sys.argv = ["ww", "rm", unit] + rest
+                return app()
 
             # If only a unit was provided, default to showing logs
             if action is None:
-                return _cli.logs(unit)
+                sys.argv = ["ww", "logs", unit] + rest
+                return app()
 
             # Unknown action after a unit name; fall through to app() which will print help
 
