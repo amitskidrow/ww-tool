@@ -6,9 +6,9 @@ Zero‑config background runner with live reload. Starts your Python target as a
 - Logs: `ww logs <name> -n 100` or `ww logs <name> -f`
   - By default, shows logs since the last successful start; add `-a/--all` for full history.
 - List: `ww ps`
-- Status: `ww status <name>`
-- PID: `ww pid <name>`
-- Control: `ww restart|stop|rm <name>` or `ww restart-all|stop-all|rm-all`
+- Status: `ww status <name|pid|unit>`
+- PID: `ww pid <name|pid|unit>`
+- Control: `ww restart|stop|rm <name|pid|unit>` or `ww restart-all|stop-all|rm-all`
 - Doctor: `ww doctor`
 
 Install via uvx (no global installs): `uvx --from <REPO_URL> ww --help`
@@ -34,8 +34,13 @@ See `prd.md` for detailed behavior and acceptance criteria.
 - Follow logs: use the printed hint, e.g. `ww logs ww-test.service -f`
 - Verify live reload: edit `test/test.py` and save; the process restarts and logs continue incrementing.
 - List running jobs: `ww ps`
-  - Shows derived state like `active`, `active(running)`, or `flapping` when the unit is auto‑restarting.
+  - Shows friendly name, PID, state, and the raw unit name. The friendly name hides the `ww-` prefix and `.service` suffix (e.g. `test`).
+  - State shows `active`, `active(running)`, or `flapping` when auto‑restarting.
 - Stop/remove when done: `ww rm ww-test.service` (or `ww rm-all` to clean everything)
+
+Addressing services by name or PID:
+- Commands accept a friendly name (from `ww ps`), a PID, or the full unit name.
+- Examples: `ww stop 31244`, `ww logs test -f`, `ww status ww-test.service`.
 
 Tip: if `ww` is not globally installed, you can run the same test without installing globally via `uvx`:
 - `uvx --from <REPO_URL> ww test/test.py`

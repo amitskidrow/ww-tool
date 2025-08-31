@@ -69,6 +69,54 @@ def _ensure_tools():
         )
 
 
+def _friendly_from_unit(unit_name: str) -> str:
+    n = unit_name
+    if n.endswith(".service"):
+        n = n[: -len(".service")]
+    if n.startswith("ww-"):
+        n = n[len("ww-") :]
+    return n
+
+
+async def _iter_ww_units(bus):
+    units = await list_units(bus)
+    return [u for u in units if u["Name"].startswith("ww-")]
+
+
+async def _resolve_identifier(bus, ident: str) -> str:
+    # 1) Exact unit name
+    if ident.endswith(".service") or ident.startswith("ww-"):
+        unit = ident if ident.endswith(".service") else f"{ident}.service"
+        path = await get_unit_path(bus, unit)
+        if not path:
+            raise RuntimeError(f"Unit not found: {unit}")
+        return unit
+
+    # 2) Numeric PID
+    if ident.isdigit():
+        pid_target = int(ident)
+        for u in await _iter_ww_units(bus):
+            try:
+                st = await get_unit_status(bus, u["Path"])
+                if int(st.get("MainPID") or 0) == pid_target:
+                    return u["Name"]
+            except Exception:
+                continue
+        raise RuntimeError(f"No ww-* unit with PID {pid_target}")
+
+    # 3) Friendly name (derived from unit)
+    matches = []
+    for u in await _iter_ww_units(bus):
+        if _friendly_from_unit(u["Name"]) == ident:
+            matches.append(u["Name"])
+    if len(matches) == 1:
+        return matches[0]
+    if len(matches) > 1:
+        opts = ", ".join(matches)
+        raise RuntimeError(f"Ambiguous name '{ident}'. Candidates: {opts}")
+    raise RuntimeError(f"Not found: {ident}")
+
+
 async def _pick_free_name(bus, base_slug: str) -> str:
     # Try ww-<slug>.service, then ww-<slug>-2.service, etc.
     i = 1
@@ -108,7 +156,7 @@ def version():
 
 @app.command("ps")
 def ps():
-    """List active ww-* units."""
+    """List active services (friendly name, PID, state, unit)."""
     async def _ps():
         bus = await connect_user_bus()
         units = await list_units(bus)
@@ -140,9 +188,10 @@ def ps():
             except Exception:
                 state = u.get("ActiveState", "unknown")
                 pid = 0
-            rows.append((name, state, pid))
-        for name, state, pid in rows:
-            typer.echo(f"{name}\t{state}\t{pid}")
+            friendly = _friendly_from_unit(name)
+            rows.append((friendly, pid, state, name))
+        for friendly, pid, state, unit in rows:
+            typer.echo(f"{friendly}\t{pid}\t{state}\t{unit}")
 
     asyncio.run(_ps())
 
@@ -152,7 +201,11 @@ def status(name: str):
     """Show detailed status for one unit (state, substate, pid)."""
     async def _status():
         bus = await connect_user_bus()
-        unit = name if name.endswith(".service") else f"{name}.service"
+        try:
+            unit = await _resolve_identifier(bus, name)
+        except RuntimeError as e:
+            typer.echo(str(e), err=True)
+            raise typer.Exit(code=1)
         path = await get_unit_path(bus, unit)
         if not path:
             typer.echo(f"Unit not found: {unit}", err=True)
@@ -180,7 +233,11 @@ def pid(name: str):
     """Print MainPID for a unit."""
     async def _pid():
         bus = await connect_user_bus()
-        unit = name if name.endswith(".service") else f"{name}.service"
+        try:
+            unit = await _resolve_identifier(bus, name)
+        except RuntimeError as e:
+            typer.echo(str(e), err=True)
+            raise typer.Exit(code=1)
         path = await get_unit_path(bus, unit)
         if not path:
             raise typer.Exit(code=1)
@@ -204,41 +261,41 @@ def logs(
     By default, shows only logs since the unit last became active to avoid
     confusion with older failures. Use --all to see full history.
     """
-    unit = name if name.endswith(".service") else f"{name}.service"
-    cmd = [
-        "journalctl",
-        "--user",
-        "-u",
-        unit,
-        "-n",
-        str(n),
-    ]
-    # If not following and not requesting full history, limit to last active start
-    if not follow and not all:
-        async def _since_ts():
+    async def _logs():
+        bus = await connect_user_bus()
+        try:
+            unit = await _resolve_identifier(bus, name)
+        except RuntimeError as e:
+            typer.echo(str(e), err=True)
+            raise typer.Exit(code=1)
+
+        cmd = [
+            "journalctl",
+            "--user",
+            "-u",
+            unit,
+            "-n",
+            str(n),
+        ]
+        if not follow and not all:
             try:
-                bus = await connect_user_bus()
                 path = await get_unit_path(bus, unit)
                 if path:
                     st = await get_unit_status(bus, path)
                     ts = int(st.get("ActiveEnterTimestamp") or 0)
                     if ts > 0:
-                        # Convert microseconds -> seconds for journalctl @<unix>
                         secs = ts // 1_000_000
-                        return secs
+                        cmd.extend(["--since", f"@{secs}"])
             except Exception:
-                return None
-            return None
+                pass
+        if follow:
+            cmd.append("-f")
+        try:
+            subprocess.run(cmd, check=False)
+        except FileNotFoundError:
+            typer.echo("journalctl not found. Ensure systemd-journald is available.", err=True)
 
-        secs = asyncio.run(_since_ts())
-        if secs:
-            cmd.extend(["--since", f"@{secs}"])
-    if follow:
-        cmd.append("-f")
-    try:
-        subprocess.run(cmd, check=False)
-    except FileNotFoundError:
-        typer.echo("journalctl not found. Ensure systemd-journald is available.", err=True)
+    asyncio.run(_logs())
 
 
 @app.command()
@@ -246,7 +303,11 @@ def restart(name: str):
     """Restart one unit."""
     async def _restart():
         bus = await connect_user_bus()
-        unit = name if name.endswith(".service") else f"{name}.service"
+        try:
+            unit = await _resolve_identifier(bus, name)
+        except RuntimeError as e:
+            typer.echo(str(e), err=True)
+            raise typer.Exit(code=1)
         await restart_unit(bus, unit)
         typer.echo(f"restarted {unit}")
 
@@ -258,7 +319,11 @@ def stop(name: str):
     """Stop one unit."""
     async def _stop():
         bus = await connect_user_bus()
-        unit = name if name.endswith(".service") else f"{name}.service"
+        try:
+            unit = await _resolve_identifier(bus, name)
+        except RuntimeError as e:
+            typer.echo(str(e), err=True)
+            raise typer.Exit(code=1)
         await stop_unit(bus, unit)
         typer.echo(f"stopped {unit}")
 
@@ -270,7 +335,11 @@ def rm(name: str):
     """Stop and remove one unit (transient will disappear)."""
     async def _rm():
         bus = await connect_user_bus()
-        unit = name if name.endswith(".service") else f"{name}.service"
+        try:
+            unit = await _resolve_identifier(bus, name)
+        except RuntimeError as e:
+            typer.echo(str(e), err=True)
+            raise typer.Exit(code=1)
         await stop_unit(bus, unit)
         await reset_failed_unit(bus, unit)
         typer.echo(f"removed {unit}")
