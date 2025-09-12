@@ -2,11 +2,12 @@
 
 ## Project Structure & Module Organization
 - `src/watchfiles_systemd/`: package code
-  - `cli.py`: Typer CLI (commands: `ps`, `pid`, `logs`, `restart*`, `stop*`, `rm*`, `doctor`, `main`)
+  - `cli.py`: Typer CLI (commands: `ps`, `pid`, `logs`, `restart*`, `stop*`, `rm*`, `doctor`, `dash`, `main`)
   - `systemd_bus.py`: systemd D‑Bus helpers
   - `util.py`: path resolution, slugging, watchfiles command builder
   - `entry.py`: `ww` script entrypoint
   - `__init__.py`: version detection
+  - `dash/`: internal WW dashboard (Textual) with ww‑specific discovery and commands
 - `test/`: simple smoke example (`test.py`) for local runs
 - `ss_smoketest/`: another small runnable example
 - `pyproject.toml`: packaging (setuptools), script entry `ww`
@@ -19,6 +20,9 @@
 - Local smoke tests:
   - `ww ss_smoketest` (directory mode)
   - `ww test/test.py` (file mode)
+- Dashboard:
+  - `ww dash` opens Textual UI over ww units (no project sentinels)
+  - Extras: `pip install watchfiles-systemd[dash]` or `uv tool install --from <REPO_URL> ww[dash]`
 - From Git without install: `uvx --from <REPO_URL> ww --help`
 
 ## Coding Style & Naming Conventions

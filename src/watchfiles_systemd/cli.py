@@ -38,8 +38,20 @@ from .util import _resolve_uvx_bin
 
 
 app = typer.Typer(
+    name="ww",
     add_completion=False,
     no_args_is_help=True,
+    help=(
+        "watchfiles + systemd (user) — minimal process manager for Python dev.\n\n"
+        "Usage:\n"
+        "  ww <path>                  Start service from file/dir (live reload)\n"
+        "  ww ps                      List active services (tab-separated)\n"
+        "  ww logs <ident> [-n N|-f]  Show logs (journalctl)\n"
+        "  ww status|pid <ident>      Show status / print PID\n"
+        "  ww restart|stop|rm <ident> Restart / stop / remove unit\n"
+        "  ww dash [opts]             Open Textual dashboard (ww units)\n\n"
+        "Identifier (<ident>): friendly name from `ww ps`, a PID, or unit name (ww-*.service)."
+    ),
     context_settings={"help_option_names": ["-h", "--help"]},
 )
 
@@ -150,13 +162,13 @@ def _properties_for_target(target: ResolvedTarget, unit_name: str) -> list[tuple
 
 @app.command(context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
 def version():
-    """Show version."""
+    """Show CLI version (semver)."""
     typer.echo(__version__)
 
 
 @app.command("ps")
 def ps():
-    """List active services (friendly name, PID, state, unit)."""
+    """List active services. Prints: name\tpid\tstate\tunit"""
     async def _ps():
         bus = await connect_user_bus()
         units = await list_units(bus)
@@ -198,7 +210,7 @@ def ps():
 
 @app.command()
 def status(name: str):
-    """Show detailed status for one unit (state, substate, pid)."""
+    """Show detailed status for a unit. Accepts friendly name, PID, or unit."""
     async def _status():
         bus = await connect_user_bus()
         try:
@@ -230,7 +242,7 @@ def status(name: str):
 
 @app.command()
 def pid(name: str):
-    """Print MainPID for a unit."""
+    """Print MainPID for a unit (integer only)."""
     async def _pid():
         bus = await connect_user_bus()
         try:
@@ -256,11 +268,7 @@ def logs(
         False, "-a", "--all", help="Show full history (not just since last start)"
     ),
 ):
-    """Show journald logs for a unit.
-
-    By default, shows only logs since the unit last became active to avoid
-    confusion with older failures. Use --all to see full history.
-    """
+    """Show journald logs for a unit. Use -f to follow.\n\nDefault: only since last start (use --all for full history)."""
     async def _logs():
         bus = await connect_user_bus()
         try:
@@ -300,7 +308,7 @@ def logs(
 
 @app.command()
 def restart(name: str):
-    """Restart one unit."""
+    """Restart a unit (starts if inactive)."""
     async def _restart():
         bus = await connect_user_bus()
         try:
@@ -316,7 +324,7 @@ def restart(name: str):
 
 @app.command()
 def stop(name: str):
-    """Stop one unit."""
+    """Stop a unit."""
     async def _stop():
         bus = await connect_user_bus()
         try:
@@ -332,7 +340,7 @@ def stop(name: str):
 
 @app.command("rm")
 def rm(name: str):
-    """Stop and remove one unit (transient will disappear)."""
+    """Stop and remove one unit (reset failed state)."""
     async def _rm():
         bus = await connect_user_bus()
         try:
@@ -464,6 +472,34 @@ def doctor():
             typer.echo("linger: ok or unknown")
 
     asyncio.run(_doctor())
+
+
+@app.command()
+def dash(
+    root: list[str] = typer.Option([], "--root", help="Root(s) to label projects by path prefix", show_default=False),
+    max_depth: int = typer.Option(5, "--max-depth", help="Ignored (for parity only)"),
+    columns: str = typer.Option("minimal", "--columns", help="Columns: minimal|full"),
+    terminal_backend: str = typer.Option("auto", "--terminal-backend", help="Terminal backend: auto|native|tmux"),
+):
+    """Open the WW dashboard (Textual UI) over ww-* units."""
+    try:
+        import textual  # noqa: F401
+    except Exception:
+        typer.echo(
+            "Dashboard requires 'textual'. Install extras: 'uv tool install --from <REPO_URL> ww[dash]' or 'pip install watchfiles-systemd[dash]'.",
+            err=True,
+        )
+        raise typer.Exit(code=1)
+
+    # Lazy import to avoid importing Textual at module import time
+    try:
+        from .dash.app import run_dash
+    except Exception as e:
+        typer.echo(f"Failed to load dashboard: {e}", err=True)
+        raise typer.Exit(code=1)
+
+    roots = [Path(r) for r in (root or [str(Path.cwd())])]
+    run_dash(roots=roots, max_depth=max_depth, last=200, columns=columns, terminal_backend=terminal_backend)
 
 
 @app.command(context_settings={"allow_extra_args": True, "ignore_unknown_options": True})

@@ -10,6 +10,7 @@ Zero‑config background runner with live reload. Starts your Python target as a
 - PID: `ww pid <name|pid|unit>`
 - Control: `ww restart|stop|rm <name|pid|unit>` or `ww restart-all|stop-all|rm-all`
 - Doctor: `ww doctor`
+- Dashboard: `ww dash [--columns full] [--root PATH ...]`
 
 Install via uvx (no global installs): `uvx --from <REPO_URL> ww --help`
 
@@ -53,3 +54,15 @@ Troubleshooting:
   - `WW_UV_BIN`: absolute path or name of `uvx` to use.
   - `WW_WF_VERSION`: pin watchfiles version, e.g. `==0.22.0`.
   - `WW_IGNORE`: extra ignore paths (comma‑separated) merged with built‑ins.
+
+## Dashboard (ww dash)
+
+Open a Textual TUI listing all `ww-*` units for the current user. No project files are required; discovery uses systemd D‑Bus and journald.
+
+- Open: `ww dash`
+- Options:
+  - `--columns minimal|full` (default minimal)
+  - `--root PATH` (repeatable) to label “Project” by path prefix
+  - `--terminal-backend auto|native|tmux` for an optional embedded terminal
+- Actions: Enter/F follow, J journal, L last logs, U/D/R up/down/restart, `/` search, T toggle terminal.
+- Dependencies: install extras with `pip install watchfiles-systemd[dash]` or `uv tool install --from <REPO_URL> ww[dash]`. Terminal and tmux backends are optional extras: `ww[dash-terminal]`, `ww[dash-tmux]`.

@@ -17,6 +17,7 @@ SUBCOMMANDS = {
     "stop-all",
     "rm-all",
     "doctor",
+    "dash",
     "version",
     "--version",
     "-V",

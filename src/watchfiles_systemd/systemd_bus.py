@@ -129,6 +129,14 @@ async def get_unit_status(bus: MessageBus, unit_path: str) -> dict[str, Any]:
         st["MainPID"] = pid
     except Exception:
         st["MainPID"] = 0
+    # WorkingDirectory (helpful for dashboards)
+    try:
+        wd = _val(await props.call_get(IFACE_SERVICE, "WorkingDirectory"))
+        if isinstance(wd, str) and wd:
+            st["WorkingDirectory"] = wd
+    except Exception:
+        # optional, ignore if missing
+        pass
     for key in ("NRestarts", "Result", "ExecMainStatus", "ExecMainCode"):
         try:
             st[key] = _val(await props.call_get(IFACE_SERVICE, key))

@@ -1,0 +1,53 @@
+# Layout: 25% / 75%
+
+Screen {
+    layout: grid;
+    grid-size: 2 3;
+    grid-gutter: 1 1;
+    grid-rows: 3 1fr auto;
+    grid-columns: 1fr 3fr;
+}
+
+#header {
+    column-span: 2;
+}
+
+#header {
+    height: 3;
+}
+
+#title {
+    width: 20;
+}
+
+#search {
+    dock: right;
+    width: 40;
+}
+
+#tabs {
+    width: 30;
+}
+
+#content-left {
+}
+
+#content-right {
+}
+
+#footer {
+    column-span: 2;
+}
+
+DataTable {
+    height: 100%;
+}
+
+RichLog {
+    height: 100%;
+}
+
+Log {
+    height: 100%;
+}
+
