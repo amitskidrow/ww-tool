@@ -1,6 +1,6 @@
 [project]
 name = "watchfiles-systemd"
-version = "0.1.13"
+version = "0.1.14"
 description = "Zero-config systemd user transient services with watchfiles live reload (ww)"
 readme = "README.md"
 requires-python = ">=3.9"
@@ -10,12 +10,10 @@ authors = [
 dependencies = [
   "typer>=0.12",
   "dbus-next>=0.2.3",
+  "textual>=1.0,<2.0",
 ]
 
 [project.optional-dependencies]
-dash = [
-  "textual>=1.0,<2.0",
-]
 dash-terminal = [
   "textual-terminal",
 ]

@@ -65,4 +65,4 @@ Open a Textual TUI listing all `ww-*` units for the current user. No project fil
   - `--root PATH` (repeatable) to label “Project” by path prefix
   - `--terminal-backend auto|native|tmux` for an optional embedded terminal
 - Actions: Enter/F follow, J journal, L last logs, U/D/R up/down/restart, `/` search, T toggle terminal.
-- Dependencies: install extras with `pip install watchfiles-systemd[dash]` or `uv tool install --from <REPO_URL> ww[dash]`. Terminal and tmux backends are optional extras: `ww[dash-terminal]`, `ww[dash-tmux]`.
+- Dependencies: Dashboard is included by default (Textual installs with ww). Optional extras for embedded terminals: `uv tool install --from <REPO_URL> ww[dash-terminal]` and/or `ww[dash-tmux]` (or `pip install watchfiles-systemd[dash-terminal]` / `[dash-tmux]`).

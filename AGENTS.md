@@ -22,7 +22,9 @@
   - `ww test/test.py` (file mode)
 - Dashboard:
   - `ww dash` opens Textual UI over ww units (no project sentinels)
-  - Extras: `pip install watchfiles-systemd[dash]` or `uv tool install --from <REPO_URL> ww[dash]`
+  - Textual is installed by default. Optional extras for embedded terminal backends:
+    - `uv tool install --from <REPO_URL> ww[dash-terminal]` and/or `ww[dash-tmux]`
+    - Or with pip: `pip install watchfiles-systemd[dash-terminal]` / `[dash-tmux]`
 - From Git without install: `uvx --from <REPO_URL> ww --help`
 
 ## Coding Style & Naming Conventions
