@@ -44,12 +44,18 @@ app = typer.Typer(
     help=(
         "watchfiles + systemd (user) — minimal process manager for Python dev.\n\n"
         "Usage:\n"
-        "  ww <path>                  Start service from file/dir (live reload)\n"
+        "  ww <path>                  Start from Python file/dir (live reload)\n"
+        "  ww run <path>              Same as above (explicit subcommand)\n"
         "  ww ps                      List active services (tab-separated)\n"
         "  ww logs <ident> [-n N|-f]  Show logs (journalctl)\n"
         "  ww status|pid <ident>      Show status / print PID\n"
         "  ww restart|stop|rm <ident> Restart / stop / remove unit\n"
         "  ww dash [opts]             Open Textual dashboard (ww units)\n\n"
+        "Directory entrypoints: __main__.py | main.py | app.py\n"
+        "Examples:\n"
+        "  ww app.py\n"
+        "  ww ./services/api\n"
+        "  ww run src/my_tool.py\n\n"
         "Identifier (<ident>): friendly name from `ww ps`, a PID, or unit name (ww-*.service)."
     ),
     context_settings={"help_option_names": ["-h", "--help"]},
@@ -502,11 +508,8 @@ def dash(
     run_dash(roots=roots, max_depth=max_depth, last=200, columns=columns, terminal_backend=terminal_backend)
 
 
-@app.command(context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
-def main(
-    path: str = typer.Argument(..., help="File or directory to run with live reload"),
-):
-    """Start background job as a transient user unit with live reload."""
+def _start_from_path(path: str) -> None:
+    """Internal: start a background unit from a Python file or directory."""
     _ensure_tools()
     p = Path(path)
     try:
@@ -527,13 +530,13 @@ def main(
             raise typer.Exit(code=1)
 
         # Report status, pid and hint (use live properties)
-        path = await get_unit_path(bus, unit_name)
+        path_obj = await get_unit_path(bus, unit_name)
         pid_val = 0
         state = "unknown"
         sub = ""
-        if path:
+        if path_obj:
             try:
-                st = await get_unit_status(bus, path)
+                st = await get_unit_status(bus, path_obj)
                 pid_val = int(st.get("MainPID") or 0)
                 state = st.get("ActiveState", "unknown")
                 sub = st.get("SubState", "")
@@ -554,3 +557,24 @@ def main(
             print(json_line({"name": unit_name, "pid": pid_val, "state": state, "log_hint": hint}))
 
     asyncio.run(_start())
+
+
+@app.command("run", context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
+def run(
+    path: str = typer.Argument(..., help="Python file or directory to run with live reload"),
+):
+    """Start from any Python file or directory with live reload.
+
+    Examples:
+      - ww app.py
+      - ww ./pkg_dir
+      - ww run src/tool.py
+    """
+    _start_from_path(path)
+
+
+@app.command("main", hidden=True, context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
+def main_alias(
+    path: str = typer.Argument(..., help="Alias of 'run'. Use 'ww <path>' or 'ww run <path>'."),
+):
+    _start_from_path(path)

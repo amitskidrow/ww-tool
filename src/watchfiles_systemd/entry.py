@@ -1,7 +1,7 @@
 import sys
 from typing import List
 
-from .cli import app, main as start_command
+from .cli import app, run as start_command
 from . import cli as _cli
 
 
@@ -18,6 +18,8 @@ SUBCOMMANDS = {
     "rm-all",
     "doctor",
     "dash",
+    "run",
+    "main",
     "version",
     "--version",
     "-V",

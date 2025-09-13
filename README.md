@@ -2,7 +2,7 @@
 
 Zero‑config background runner with live reload. Starts your Python target as a transient user service via systemd D‑Bus and wraps it with watchfiles for restarts on code changes.
 
-- Start: `ww <path>` (file or directory)
+- Start: `ww <path>` (file or directory) — or `ww run <path>`
 - Logs: `ww logs <name> -n 100` or `ww logs <name> -f`
   - By default, shows logs since the last successful start; add `-a/--all` for full history.
 - List: `ww ps`

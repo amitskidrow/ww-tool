@@ -60,6 +60,8 @@ Notes:
 
 * `ww <path>` — Start background job.
 
+  * Alternate explicit form: `ww run <path>` (identical behavior).
+
   * If `<path>` is a **file**: run `python <file>` with **file-scoped** reload.
   * If `<path>` is a **directory** (e.g., `.`): infer an entrypoint and run with **recursive** reload.
   * On success, print: **unit name**, **MainPID**, short **log hint**.
@@ -84,7 +86,7 @@ Notes:
 
 ### 6.1 Path mode detection
 
-* **File mode:** If `<path>` is a regular file, run `python <file>`; watch **only that file** (restart on close-after-write).
+* **File mode:** If `<path>` is a regular file, run `python <file>`; watch **only that file** (restart on close-after-write). Example: `ww <python_file_name>.py`.
 * **Directory mode:** If `<path>` is a directory, pick the first match:
 
   1. `<dir>/__main__.py` → `python -m <dir_basename>`
