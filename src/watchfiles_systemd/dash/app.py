@@ -6,6 +6,7 @@ from asyncio import Task
 from contextlib import suppress
 from pathlib import Path
 from typing import Iterable
+import re
 
 from textual import on
 from textual.app import App, ComposeResult
@@ -61,7 +62,11 @@ class WWDashApp(App):
         self.term_container: Container | None = None
         self._terminals = TerminalRegistry(backend=self.terminal_backend)  # type: ignore[arg-type]
         self._show_terminal: bool = False
+        # Map by unit -> Tab (Tabs are created with DOM-safe ids)
         self._term_tabs: dict[str, Tab] = {}
+        # Mappings between systemd unit keys and DOM-safe ids
+        self._dom_id_by_unit: dict[str, str] = {}
+        self._unit_by_dom_id: dict[str, str] = {}
         self._rows: list[int] = []  # maps row index -> service index
         self._follow_task: Task | None = None
         self._status_task: Task | None = None
@@ -351,22 +356,26 @@ class WWDashApp(App):
             switcher = self.query_one('#term-switcher', ContentSwitcher)
         except Exception:
             return
-        key = svc.unit
-        if key not in self._term_tabs:
-            tab = Tab(label=svc.name, id=key)
-            self._term_tabs[key] = tab
+        unit_key = svc.unit
+        dom_id = self._dom_id_for_unit(unit_key)
+        if unit_key not in self._term_tabs:
+            tab = Tab(label=svc.name, id=dom_id)
+            self._term_tabs[unit_key] = tab
             tabs.add_tab(tab)
             # Build or reuse session widget
-            sess = self._terminals.get_or_create(key, cwd=svc.dir)
+            sess = self._terminals.get_or_create(unit_key, cwd=svc.dir)
             w = getattr(sess, "widget", None)
             if w is None:
                 w = Label("Terminal not available")
-            w.id = key  # type: ignore[attr-defined]
+            try:
+                w.id = dom_id  # type: ignore[attr-defined]
+            except Exception:
+                pass
             switcher.add(w)
         if activate:
             try:
-                tabs.active = key  # type: ignore[assignment]
-                switcher.current = key  # type: ignore[assignment]
+                tabs.active = dom_id  # type: ignore[assignment]
+                switcher.current = dom_id  # type: ignore[assignment]
             except Exception:
                 pass
 
@@ -445,7 +454,8 @@ class WWDashApp(App):
             except Exception:
                 pass
             try:
-                self._maybe_enable_tmux_refresh(nxt)  # type: ignore[arg-type]
+                unit_key = self._unit_by_dom_id.get(nxt or "", nxt or "")
+                self._maybe_enable_tmux_refresh(unit_key)  # type: ignore[arg-type]
             except Exception:
                 pass
         except Exception:
@@ -472,11 +482,67 @@ class WWDashApp(App):
             except Exception:
                 pass
             try:
-                self._maybe_enable_tmux_refresh(prv)  # type: ignore[arg-type]
+                unit_key = self._unit_by_dom_id.get(prv or "", prv or "")
+                self._maybe_enable_tmux_refresh(unit_key)  # type: ignore[arg-type]
             except Exception:
                 pass
         except Exception:
             pass
+
+    # Utility: Mapping between systemd unit names and DOM-safe ids
+    def _dom_id_for_unit(self, unit: str) -> str:
+        """Return a DOM-safe id for a unit and memoize mappings.
+
+        Textual identifiers must contain only letters, numbers, underscores, or hyphens,
+        and must not begin with a number. Systemd units may contain dots, so we sanitize
+        and ensure uniqueness.
+        """
+        if unit in self._dom_id_by_unit:
+            return self._dom_id_by_unit[unit]
+        base = re.sub(r"[^a-zA-Z0-9_-]+", "-", unit)
+        if not base or base[0].isdigit():
+            base = f"svc-{base}"
+        dom_id = base
+        # Ensure uniqueness in case of collisions
+        i = 2
+        while dom_id in self._unit_by_dom_id and self._unit_by_dom_id[dom_id] != unit:
+            dom_id = f"{base}-{i}"
+            i += 1
+        self._dom_id_by_unit[unit] = dom_id
+        self._unit_by_dom_id[dom_id] = unit
+        return dom_id
+
+    @on(Tabs.TabActivated)
+    def _on_tabs_changed(self, event: Tabs.TabActivated) -> None:
+        """Handle header filter tabs and terminal tabs activation.
+
+        - Header filter tabs have id="tabs".
+        - Terminal tabs have id="term-tabs" and use DOM-safe ids; we map back to units
+          when enabling tmux refresh.
+        """
+        tabs_owner = getattr(event, "tabs", None)
+        tabs_id = getattr(tabs_owner, "id", None) or getattr(event.control, "id", None)
+        if tabs_id == "tabs":
+            tab_id = event.tab.id or "tab-all"
+            if tab_id.endswith("all"):
+                self.state.filter = "all"
+            elif tab_id.endswith("active"):
+                self.state.filter = "active"
+            elif tab_id.endswith("failed"):
+                self.state.filter = "failed"
+            self._rebuild_table(select_same=True)
+        elif tabs_id == "term-tabs":
+            key_dom = event.tab.id or ""
+            try:
+                switcher = self.query_one('#term-switcher', ContentSwitcher)
+                switcher.current = key_dom
+            except Exception:
+                pass
+            try:
+                unit_key = self._unit_by_dom_id.get(key_dom, key_dom)
+                self._maybe_enable_tmux_refresh(unit_key)
+            except Exception:
+                pass
 
     async def _start_follow(self, svc: Service, force_journal: bool = False) -> None:
         # Cancel previous task; guard against redundant restarts
@@ -610,4 +676,3 @@ def run_dash(roots: Iterable[Path], max_depth: int = 5, last: int = 200, columns
         state.services = []
     app = WWDashApp(state=state, last=last, columns=columns, terminal_backend=terminal_backend)
     app.run()
-
