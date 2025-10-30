@@ -1,2 +1,9 @@
 typer>=0.12
 dbus-next>=0.2.3
+textual<2.0,>=1.0
+
+[dash-terminal]
+textual-terminal
+
+[dash-tmux]
+libtmux>=0.21
