@@ -1,6 +1,6 @@
 Metadata-Version: 2.4
 Name: watchfiles-systemd
-Version: 0.1.20
+Version: 0.1.23
 Summary: Zero-config systemd user transient services with watchfiles live reload (ww)
 Author-email: ww <noreply@example.com>
 Requires-Python: >=3.9
